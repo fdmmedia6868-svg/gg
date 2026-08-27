@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stickman Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">LOCAL WORKSPACE / 01</p>
+      <h1>Stickman Studio</h1>
+      <p class="lede">Biến kịch bản SRT thành pipeline hình ảnh sẵn sàng cho CapCut.</p>
+    </header>
+    <section class="create-panel">
+      <form action="/projects" method="post">
+        <label for="project_name">Tên dự án</label>
+        <div class="form-row"><input id="project_name" name="project_name" required placeholder="Nghi_Si_Tham_Nhung"><button type="submit">Tạo dự án</button></div>
+      </form>
+    </section>
+    {% if request.query_params.get('job_id') %}
+    <section class="progress-panel" data-job-id="{{ request.query_params.get('job_id') }}">
+      <strong id="job-status">Đang xếp hàng tạo cảnh...</strong>
+      <span id="job-detail"></span>
+      <progress id="job-progress" value="0" max="100"></progress>
+    </section>
+    <script>
+      const panel = document.querySelector('[data-job-id]');
+      const jobId = panel.dataset.jobId;
+      const status = document.getElementById('job-status');
+      const detail = document.getElementById('job-detail');
+      const progress = document.getElementById('job-progress');
+      async function updateJob() {
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (!response.ok) return;
+        const job = await response.json();
+        const percent = job.total ? Math.round(job.created / job.total * 100) : 100;
+        progress.value = percent;
+        status.textContent = job.status === 'completed' ? 'Đã tạo xong' : job.status === 'failed' ? 'Tạo thất bại' : 'Đang tạo cảnh...';
+        detail.textContent = `${job.created}/${job.total} mốc, đang xử lý ${job.current}`;
+        if (job.status !== 'completed' && job.status !== 'failed') setTimeout(updateJob, 400);
+      }
+      updateJob();
+    </script>
+    {% endif %}
+    <section class="projects">
+      <div class="section-heading"><h2>Dự án</h2><span>{{ projects|length }} workspace</span></div>
+      {% for project in projects %}
+      <article class="project-card">
+        <div><h3>{{ project.project_name }}</h3><p>{{ project.scenes|length }} cảnh · {{ project.assets|length }} asset · tạo {{ project.created_at.strftime('%d/%m/%Y') }}</p></div>
+        <div class="project-tools">
+          <form action="/projects/{{ project.id }}/srt" method="post" enctype="multipart/form-data">
+            <label class="file-input"><input type="file" name="srt_file" accept=".srt" required> Chọn SRT</label>
+            <label class="check"><input type="checkbox" name="merge"> Gộp cảnh ngắn</label>
+            <button type="submit">Nạp kịch bản</button>
+          </form>
+          <form action="/projects/{{ project.id }}/assets" method="post" enctype="multipart/form-data">
+            <input name="tag_name" required placeholder="@NhanVat_NghiSi">
+            <select name="asset_type"><option>Character</option><option>Background</option><option>Style</option></select>
+            <label class="file-input"><input type="file" name="image_file" accept="image/*" required> Ảnh tham chiếu</label>
+            <button type="submit">Thêm asset</button>
+          </form>
+          <form action="/projects/{{ project.id }}/scenes/each-second" method="post">
+            <input name="start" pattern="[0-9]+:[0-5][0-9]" placeholder="Từ MM:SS" required>
+            <input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Đến MM:SS" required>
+            <button type="submit">Tạo mốc từng giây</button>
+          </form>
+          <form action="/api/projects/{{ project.id }}/scenes" method="get">
+            <input name="start" pattern="[0-9]+:[0-5][0-9]" placeholder="Tìm từ MM:SS">
+            <input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Tìm đến MM:SS">
+            <button type="submit">Tìm cảnh</button>
+          </form>
+        </div>
+      </article>
+      {% else %}
+      <div class="empty">Chưa có dự án. Tạo workspace đầu tiên ở trên.</div>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>
