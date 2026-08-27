@@ -27,6 +27,9 @@ class Project(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_name: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generation_status: Mapped[str] = mapped_column(String(20), default="Idle", nullable=False)
+    generation_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    generation_current: Mapped[str | None] = mapped_column(String(10))
     assets: Mapped[list["ReferenceAsset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     scenes: Mapped[list["ScriptScene"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 

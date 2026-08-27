@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .database import Base, engine, get_db
+from .database import ensure_schema, get_db
 from .models import AssetType, Project, ReferenceAsset, SceneStatus, ScriptScene
 from .srt_parser import merge_short_subtitles, parse_srt
 
@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = BASE_DIR / "storage"
 STORAGE_DIR.mkdir(exist_ok=True)
 
-Base.metadata.create_all(bind=engine)
+ensure_schema()
 app = FastAPI(title="Stickman Studio")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -133,6 +133,11 @@ def create_each_second_scenes(
         raise HTTPException(status_code=400, detail="End must be after start")
     job_id = str(uuid4())
     total = max(0, (end_ms - start_ms) // 1000)
+    project = db.get(Project, project_id)
+    project.generation_status = "Pending"
+    project.generation_progress = 0
+    project.generation_current = start
+    db.commit()
     with generation_jobs_lock:
         generation_jobs[job_id] = {"status": "queued", "created": 0, "total": total, "current": start}
     if background_tasks is None:
@@ -158,6 +163,9 @@ def create_each_second_scenes_background(
         }
         with generation_jobs_lock:
             generation_jobs[job_id]["status"] = "running"
+        project = db.get(Project, project_id)
+        project.generation_status = "Running"
+        db.commit()
         for timestamp in range(start_ms, end_ms, 1000):
             if timestamp not in existing:
                 db.add(ScriptScene(
@@ -170,14 +178,23 @@ def create_each_second_scenes_background(
                 db.commit()
                 existing.add(timestamp)
             with generation_jobs_lock:
-                generation_jobs[job_id].update({
-                    "created": generation_jobs[job_id]["created"] + 1,
-                    "current": f"{timestamp // 60000:02d}:{timestamp // 1000 % 60:02d}",
-                })
+                processed = generation_jobs[job_id]["created"] + 1
+                current = f"{timestamp // 60000:02d}:{timestamp // 1000 % 60:02d}"
+                generation_jobs[job_id].update({"created": processed, "current": current})
+            project.generation_progress = round(processed / generation_jobs[job_id]["total"] * 100) if generation_jobs[job_id]["total"] else 100
+            project.generation_current = current
+            db.commit()
+        project.generation_status = "Done"
+        project.generation_progress = 100
+        db.commit()
         with generation_jobs_lock:
             generation_jobs[job_id]["status"] = "completed"
     except Exception as error:
         db.rollback()
+        project = db.get(Project, project_id)
+        if project:
+            project.generation_status = "Failed"
+            db.commit()
         with generation_jobs_lock:
             generation_jobs[job_id].update({"status": "failed", "error": str(error)})
     finally:
