@@ -65,7 +65,7 @@ def upload_reference_asset(
         project_id=project_id,
         tag_name=tag_name.strip().lstrip("@"),
         asset_type=asset_type,
-        image_path=str(destination.relative_to(BASE_DIR)),
+        image_path=str(destination),
     ))
     db.commit()
     return RedirectResponse(url="/", status_code=303)
