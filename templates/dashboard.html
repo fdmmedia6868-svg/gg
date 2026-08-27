@@ -71,6 +71,10 @@
             <input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Tìm đến MM:SS">
             <button type="submit">Tìm cảnh</button>
           </form>
+          <form action="/projects/{{ project.id }}/start-render" method="post">
+            <button type="submit">Bắt đầu tạo ảnh</button>
+            <span class="storage-note">Output: storage/{{ project.id }}/renders/</span>
+          </form>
         </div>
       </article>
       {% else %}

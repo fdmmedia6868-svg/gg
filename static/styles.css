@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 .progress-panel { display:grid; gap:8px; background:#e3eee8; border-left:4px solid #3b8064; padding:16px 20px; margin-bottom:32px; } .progress-panel span { color:var(--muted); font:12px 'DM Mono', monospace; } progress { width:100%; height:10px; accent-color:#3b8064; }
+.storage-note { color:var(--muted); font:11px 'DM Mono', monospace; }
 :root { --ink:#202b2d; --muted:#687477; --paper:#f4f0e8; --line:#d6d0c5; --accent:#e95d3f; --panel:#fffdf8; }
 * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:radial-gradient(circle at 85% 8%, #f8d7bd 0 12%, transparent 32%), var(--paper); font-family:'Space Grotesk', sans-serif; }
 .shell { width:min(960px, calc(100% - 40px)); margin:0 auto; padding:72px 0; } header { max-width:650px; margin-bottom:48px; } .eyebrow, .section-heading span { color:var(--accent); font:500 12px 'DM Mono', monospace; letter-spacing:0; } h1 { font-size:clamp(48px, 8vw, 92px); line-height:.92; letter-spacing:0; margin:14px 0 22px; } .lede { color:var(--muted); font-size:19px; line-height:1.5; max-width:520px; }

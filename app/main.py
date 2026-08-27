@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .database import ensure_schema, get_db
 from .models import AssetType, Project, ReferenceAsset, SceneStatus, ScriptScene
+from .renderer import GoogleFlowAutomator
 from .srt_parser import merge_short_subtitles, parse_srt
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -209,6 +210,55 @@ def generation_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.post("/projects/{project_id}/start-render")
+def start_render(
+    project_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not db.query(ScriptScene).filter(ScriptScene.project_id == project_id).count():
+        raise HTTPException(status_code=400, detail="Project has no scenes")
+    job_id = str(uuid4())
+    with generation_jobs_lock:
+        generation_jobs[job_id] = {"status": "queued", "created": 0, "total": 0, "current": None}
+    project.generation_status = "Pending"
+    project.generation_progress = 0
+    db.commit()
+    background_tasks.add_task(render_project_background, job_id, project_id)
+    return RedirectResponse(url=f"/?job_id={job_id}", status_code=303)
+
+
+def render_project_background(job_id: str, project_id: int):
+    db = next(get_db())
+    try:
+        scenes_count = db.query(ScriptScene).filter(ScriptScene.project_id == project_id).count()
+        with generation_jobs_lock:
+            generation_jobs[job_id]["total"] = scenes_count
+        def update_render_progress(index: int, total: int, scene: ScriptScene):
+            with generation_jobs_lock:
+                generation_jobs[job_id].update({
+                    "created": index,
+                    "total": total,
+                    "current": f"{scene.start_ms // 60000:02d}:{scene.start_ms // 1000 % 60:02d}",
+                })
+
+        GoogleFlowAutomator(STORAGE_DIR, progress_callback=update_render_progress).render_project(project_id, db)
+        with generation_jobs_lock:
+            generation_jobs[job_id].update({"status": "completed", "created": scenes_count})
+    except Exception as error:
+        project = db.get(Project, project_id)
+        if project:
+            project.generation_status = "Failed"
+            db.commit()
+        with generation_jobs_lock:
+            generation_jobs[job_id].update({"status": "failed", "error": str(error)})
+    finally:
+        db.close()
 
 
 @app.post("/projects/{project_id}/srt")
