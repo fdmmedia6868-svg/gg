@@ -22,8 +22,8 @@ class GoogleFlowAutomator:
     ):
         self.storage_dir = storage_dir
         self.cdp_url = cdp_url
-        self.prompt_selector = prompt_selector or os.getenv("FLOW_PROMPT_SELECTOR", "textarea")
-        self.submit_selector = submit_selector or os.getenv("FLOW_SUBMIT_SELECTOR", "button:has-text('Create')")
+        self.prompt_selector = prompt_selector or os.getenv("FLOW_PROMPT_SELECTOR", '[contenteditable="true"]')
+        self.submit_selector = submit_selector or os.getenv("FLOW_SUBMIT_SELECTOR", 'button:has-text("Tạo")')
         self.download_selector = download_selector or os.getenv("FLOW_DOWNLOAD_SELECTOR", "a[download]")
         self.playwright_factory = playwright_factory
         self.progress_callback = progress_callback
@@ -60,7 +60,14 @@ class GoogleFlowAutomator:
             from playwright.sync_api import sync_playwright
             factory = sync_playwright
         with factory() as playwright:
-            browser = playwright.chromium.connect_over_cdp(self.cdp_url)
+            try:
+                browser = playwright.chromium.connect_over_cdp(self.cdp_url)
+            except Exception as error:
+                raise RuntimeError(
+                    f"Cannot connect to Chrome DevTools at {self.cdp_url}. "
+                    "Close Chrome and restart it with --remote-debugging-port=9222 "
+                    f"(original error: {error})"
+                ) from error
             if not browser.contexts:
                 raise RuntimeError("No browser context found at the CDP endpoint")
             context = browser.contexts[0]

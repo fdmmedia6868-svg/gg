@@ -1,11 +1,13 @@
+import os
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .database import ensure_schema, get_db
@@ -23,6 +25,14 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 generation_jobs: dict[str, dict] = {}
 generation_jobs_lock = Lock()
+MIDJOURNEY_CREF_URL = os.getenv("MIDJOURNEY_CREF_URL", "<URL_ANH_THAM_CHIEU_CUA_BAN>")
+
+
+class SceneUpdate(BaseModel):
+    image_prompt: str = ""
+    video_prompt: str = ""
+    use_cref: bool = True
+    reference_url: str = ""
 
 
 @app.get("/health")
@@ -34,6 +44,120 @@ def health():
 def dashboard(request: Request, db: Session = Depends(get_db)):
     projects = db.query(Project).order_by(Project.created_at.desc()).all()
     return templates.TemplateResponse("dashboard.html", {"request": request, "projects": projects})
+
+
+def format_scene_time(value: int) -> str:
+    total_seconds = value // 1000
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+@app.get("/projects/{project_id}/export-prompts")
+def export_prompts(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    scenes = db.query(ScriptScene).filter(
+        ScriptScene.project_id == project_id,
+    ).order_by(ScriptScene.start_ms).all()
+    lines = []
+    for scene in scenes:
+        lines.extend([
+            f"--- [{format_scene_time(scene.start_ms)} - {format_scene_time(scene.end_ms)}] Scene {scene.id} ---",
+            f"/imagine prompt: {GoogleFlowAutomator.prompt_for(scene)}{reference_options_for(scene)} --ar 16:9",
+            "",
+        ])
+
+    export_path = STORAGE_DIR / str(project_id) / "midjourney_commands.txt"
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    export_path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    return FileResponse(
+        export_path,
+        media_type="text/plain; charset=utf-8",
+        filename="midjourney_commands.txt",
+    )
+
+
+def reference_options_for(scene: ScriptScene) -> str:
+    if not scene.use_cref:
+        return ""
+    reference_url = scene.reference_url or MIDJOURNEY_CREF_URL
+    return f" --cref {reference_url} --cw 100"
+
+
+def video_prompt_for(scene: ScriptScene) -> str:
+    return scene.video_prompt or "Extremely slow cinematic camera movement. The objects remain perfectly still. Zero morphing, flat 2D style."
+
+
+@app.post("/api/projects/{project_id}/scenes/{scene_id}")
+def update_scene(
+    project_id: int,
+    scene_id: int,
+    generated_prompt: str = Form(""),
+    video_prompt: str = Form(""),
+    use_reference: bool = Form(False),
+    reference_url: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    scene = db.get(ScriptScene, scene_id)
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    scene.generated_prompt = generated_prompt.strip() or None
+    scene.video_prompt = video_prompt.strip() or None
+    scene.use_cref = use_reference
+    scene.reference_url = reference_url.strip() or None
+    db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/api/scenes/{scene_id}/update")
+def update_scene_json(scene_id: int, payload: SceneUpdate, db: Session = Depends(get_db)):
+    scene = db.get(ScriptScene, scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    scene.generated_prompt = payload.image_prompt.strip() or None
+    scene.video_prompt = payload.video_prompt.strip() or None
+    scene.use_cref = payload.use_cref
+    scene.reference_url = payload.reference_url.strip() or None
+    db.commit()
+    return {
+        "id": scene.id,
+        "image_prompt": scene.generated_prompt or "",
+        "video_prompt": scene.video_prompt or "",
+        "use_cref": scene.use_cref,
+        "reference_url": scene.reference_url or "",
+    }
+
+
+@app.get("/projects/{project_id}/export-video-commands")
+def export_video_commands(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    scenes = db.query(ScriptScene).filter(
+        ScriptScene.project_id == project_id,
+    ).order_by(ScriptScene.start_ms).all()
+    lines = []
+    for scene in scenes:
+        lines.extend([
+            f"--- [{format_scene_time(scene.start_ms)} - {format_scene_time(scene.end_ms)}] Scene {scene.id} ---",
+            video_prompt_for(scene),
+            "",
+        ])
+    export_path = STORAGE_DIR / str(project_id) / "video_commands.txt"
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    export_path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    return FileResponse(
+        export_path,
+        media_type="text/plain; charset=utf-8",
+        filename="video_commands.txt",
+    )
+
+
+@app.get("/projects/{project_id}/export-video-prompts")
+def export_video_prompts(project_id: int, db: Session = Depends(get_db)):
+    return export_video_commands(project_id, db)
 
 
 @app.post("/projects")
@@ -191,13 +315,14 @@ def create_each_second_scenes_background(
         with generation_jobs_lock:
             generation_jobs[job_id]["status"] = "completed"
     except Exception as error:
+        print(f"CRITICAL ERROR IN JOB: {str(error)}")
         db.rollback()
         project = db.get(Project, project_id)
         if project:
             project.generation_status = "Failed"
             db.commit()
         with generation_jobs_lock:
-            generation_jobs[job_id].update({"status": "failed", "error": str(error)})
+            generation_jobs[job_id].update({"status": "failed", "current": str(error), "error": str(error)})
     finally:
         if owns_db:
             db.close()
@@ -251,12 +376,13 @@ def render_project_background(job_id: str, project_id: int):
         with generation_jobs_lock:
             generation_jobs[job_id].update({"status": "completed", "created": scenes_count})
     except Exception as error:
+        print(f"CRITICAL ERROR IN JOB: {str(error)}")
         project = db.get(Project, project_id)
         if project:
             project.generation_status = "Failed"
             db.commit()
         with generation_jobs_lock:
-            generation_jobs[job_id].update({"status": "failed", "error": str(error)})
+            generation_jobs[job_id].update({"status": "failed", "current": str(error), "error": str(error)})
     finally:
         db.close()
 

@@ -1,86 +1,66 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" class="bg-slate-950">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stickman Studio</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-  <main class="shell">
-    <header>
-      <p class="eyebrow">LOCAL WORKSPACE / 01</p>
-      <h1>Stickman Studio</h1>
-      <p class="lede">Biến kịch bản SRT thành pipeline hình ảnh sẵn sàng cho CapCut.</p>
-    </header>
-    <section class="create-panel">
-      <form action="/projects" method="post">
-        <label for="project_name">Tên dự án</label>
-        <div class="form-row"><input id="project_name" name="project_name" required placeholder="Nghi_Si_Tham_Nhung"><button type="submit">Tạo dự án</button></div>
-      </form>
-    </section>
-    {% if request.query_params.get('job_id') %}
-    <section class="progress-panel" data-job-id="{{ request.query_params.get('job_id') }}">
-      <strong id="job-status">Đang xếp hàng tạo cảnh...</strong>
-      <span id="job-detail"></span>
-      <progress id="job-progress" value="0" max="100"></progress>
-    </section>
-    <script>
-      const panel = document.querySelector('[data-job-id]');
-      const jobId = panel.dataset.jobId;
+<body class="min-h-screen bg-slate-950 text-slate-100" style="font-family:'Space Grotesk',sans-serif">
+<main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <header class="mb-8 flex flex-col gap-5 border-b border-slate-800 pb-8 sm:flex-row sm:items-end sm:justify-between">
+    <div><p class="font-mono text-xs uppercase tracking-[0.24em] text-cyan-400">LOCAL WORKSPACE / 01</p><h1 class="mt-3 text-4xl font-semibold text-white sm:text-6xl">Stickman Studio</h1><p class="mt-3 text-slate-400">Biến kịch bản SRT thành pipeline hình ảnh sẵn sàng cho CapCut.</p></div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">{{ projects|length }} workspace</div>
+  </header>
+  <section class="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:p-6"><h2 class="text-lg font-semibold text-white">Tạo project mới</h2><p class="mt-1 text-sm text-slate-400">Bắt đầu một workspace cho kịch bản mới.</p><form action="/projects" method="post" class="mt-4 flex flex-col gap-3 sm:flex-row"><input id="project_name" name="project_name" required placeholder="Nghi_Si_Tham_Nhung" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400"><button class="rounded-lg bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-300">Tạo dự án</button></form></section>
+  {% if request.query_params.get('job_id') %}
+  <section class="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-5" data-job-id="{{ request.query_params.get('job_id') }}"><div class="flex justify-between"><strong id="job-status" class="text-sm text-white">Đang xếp hàng...</strong><span id="job-percent" class="font-mono text-xs text-slate-400">0%</span></div><div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div id="job-progress" class="h-full w-0 rounded-full bg-cyan-400 transition-all"></div></div><p id="job-detail" class="mt-3 break-words font-mono text-xs text-slate-400"></p></section>
+  <script>
+    const jobPanel = document.querySelector('[data-job-id]');
+    const jobId = jobPanel.dataset.jobId;
+    async function updateJob() {
+      const response = await fetch(`/api/jobs/${jobId}`);
+      if (!response.ok) return;
+      const job = await response.json();
+      const percent = job.total ? Math.round(job.created / job.total * 100) : (job.status === 'completed' ? 100 : 0);
+      document.getElementById('job-progress').style.width = `${percent}%`;
+      document.getElementById('job-percent').textContent = `${percent}%`;
       const status = document.getElementById('job-status');
-      const detail = document.getElementById('job-detail');
       const progress = document.getElementById('job-progress');
-      async function updateJob() {
-        const response = await fetch(`/api/jobs/${jobId}`);
-        if (!response.ok) return;
-        const job = await response.json();
-        const percent = job.total ? Math.round(job.created / job.total * 100) : 100;
-        progress.value = percent;
-        status.textContent = job.status === 'completed' ? 'Đã tạo xong' : job.status === 'failed' ? 'Tạo thất bại' : 'Đang tạo cảnh...';
-        detail.textContent = `${job.created}/${job.total} mốc, đang xử lý ${job.current}`;
-        if (job.status !== 'completed' && job.status !== 'failed') setTimeout(updateJob, 400);
-      }
-      updateJob();
-    </script>
-    {% endif %}
-    <section class="projects">
-      <div class="section-heading"><h2>Dự án</h2><span>{{ projects|length }} workspace</span></div>
-      {% for project in projects %}
-      <article class="project-card">
-        <div><h3>{{ project.project_name }}</h3><p>{{ project.scenes|length }} cảnh · {{ project.assets|length }} asset · tạo {{ project.created_at.strftime('%d/%m/%Y') }}</p></div>
-        <div class="project-tools">
-          <form action="/projects/{{ project.id }}/srt" method="post" enctype="multipart/form-data">
-            <label class="file-input"><input type="file" name="srt_file" accept=".srt" required> Chọn SRT</label>
-            <label class="check"><input type="checkbox" name="merge"> Gộp cảnh ngắn</label>
-            <button type="submit">Nạp kịch bản</button>
-          </form>
-          <form action="/projects/{{ project.id }}/assets" method="post" enctype="multipart/form-data">
-            <input name="tag_name" required placeholder="@NhanVat_NghiSi">
-            <select name="asset_type"><option>Character</option><option>Background</option><option>Style</option></select>
-            <label class="file-input"><input type="file" name="image_file" accept="image/*" required> Ảnh tham chiếu</label>
-            <button type="submit">Thêm asset</button>
-          </form>
-          <form action="/projects/{{ project.id }}/scenes/each-second" method="post">
-            <input name="start" pattern="[0-9]+:[0-5][0-9]" placeholder="Từ MM:SS" required>
-            <input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Đến MM:SS" required>
-            <button type="submit">Tạo mốc từng giây</button>
-          </form>
-          <form action="/api/projects/{{ project.id }}/scenes" method="get">
-            <input name="start" pattern="[0-9]+:[0-5][0-9]" placeholder="Tìm từ MM:SS">
-            <input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Tìm đến MM:SS">
-            <button type="submit">Tìm cảnh</button>
-          </form>
-          <form action="/projects/{{ project.id }}/start-render" method="post">
-            <button type="submit">Bắt đầu tạo ảnh</button>
-            <span class="storage-note">Output: storage/{{ project.id }}/renders/</span>
-          </form>
-        </div>
+      if (job.status === 'completed') { status.textContent = 'Đã tạo xong'; status.className = 'text-sm text-emerald-400'; progress.className = 'h-full rounded-full bg-emerald-400 transition-all'; }
+      else if (job.status === 'failed') { status.textContent = 'Tạo thất bại'; status.className = 'text-sm text-rose-400'; progress.className = 'h-full rounded-full bg-rose-400 transition-all'; }
+      else { status.textContent = 'Đang xử lý...'; }
+      document.getElementById('job-detail').textContent = job.status === 'failed' ? `Lỗi: ${job.current || job.error || 'Không xác định'}` : `${job.created || 0}/${job.total || 0} mốc, đang xử lý ${job.current || 'khởi động'}`;
+      if (job.status !== 'completed' && job.status !== 'failed') setTimeout(updateJob, 500);
+    }
+    updateJob();
+  </script>
+  {% endif %}
+  <section><div class="mb-4 border-b border-slate-800 pb-3"><p class="font-mono text-xs uppercase tracking-widest text-cyan-400">Control room</p><h2 class="mt-1 text-2xl font-semibold text-white">Dự án</h2></div>
+  {% for project in projects %}
+  <article class="mb-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+    <div class="flex flex-col gap-2 border-b border-slate-800 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><h3 class="text-xl font-semibold text-white">{{ project.project_name }}</h3><p class="mt-1 text-sm text-slate-400">{{ project.scenes|length }} cảnh · {{ project.assets|length }} asset · tạo {{ project.created_at.strftime('%d/%m/%Y') }}</p></div><span class="rounded-full border border-slate-700 px-3 py-1 font-mono text-xs text-slate-400">{{ project.generation_status }}</span></div>
+    <div class="grid gap-3 border-b border-slate-800 p-5 sm:grid-cols-2 lg:grid-cols-3">
+      <form action="/projects/{{ project.id }}/srt" method="post" enctype="multipart/form-data" class="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3"><label class="flex-1 cursor-pointer rounded-lg border border-dashed border-slate-700 px-3 py-2 text-xs text-slate-400"><input type="file" name="srt_file" accept=".srt" required class="hidden">Chọn SRT</label><label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" name="merge" class="accent-cyan-400"> Gộp ngắn</label><button class="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold hover:bg-cyan-500 hover:text-slate-950">Nạp kịch bản</button></form>
+      <form action="/projects/{{ project.id }}/assets" method="post" enctype="multipart/form-data" class="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3"><input name="tag_name" required placeholder="@NhanVat" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs"><select name="asset_type" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs"><option>Character</option><option>Background</option><option>Style</option></select><label class="w-full cursor-pointer text-xs text-slate-400"><input type="file" name="image_file" accept="image/*" required> Ảnh tham chiếu</label><button class="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold hover:bg-cyan-500 hover:text-slate-950">Thêm asset</button></form>
+      <form action="/projects/{{ project.id }}/scenes/each-second" method="post" class="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3"><input name="start" pattern="[0-9]+:[0-5][0-9]" placeholder="Từ MM:SS" required class="w-24 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs"><input name="end" pattern="[0-9]+:[0-5][0-9]" placeholder="Đến MM:SS" required class="w-24 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs"><button class="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold hover:bg-cyan-500 hover:text-slate-950">Tạo mốc từng giây</button></form>
+      <form action="/projects/{{ project.id }}/start-render" method="post" class="rounded-xl border border-slate-800 bg-slate-950 p-3"><button class="w-full rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-950">Bắt đầu tạo ảnh</button><p class="mt-2 font-mono text-[10px] text-slate-500">storage/{{ project.id }}/renders/</p></form>
+      <a class="flex items-center justify-center rounded-xl bg-cyan-500 px-3 py-3 text-center text-xs font-semibold text-slate-950" href="/projects/{{ project.id }}/export-prompts" download>Download Midjourney Commands</a><a class="flex items-center justify-center rounded-xl bg-emerald-500 px-3 py-3 text-center text-xs font-semibold text-slate-950" href="/projects/{{ project.id }}/export-video-prompts" download>Download Video AI Commands</a>
+    </div>
+    <div class="p-5 sm:p-6"><div class="mb-4 flex items-center justify-between"><h4 class="text-lg font-semibold text-white">Scene Manager</h4><span class="font-mono text-xs text-slate-500">{{ project.scenes|length }} scenes</span></div>
+    {% for scene in project.scenes|sort(attribute='start_ms') %}
+    <form class="scene-form mb-4 grid gap-4 rounded-xl border border-slate-800 bg-slate-950 p-4 lg:grid-cols-[1fr_1.4fr_1.4fr_220px]" action="/api/scenes/{{ scene.id }}/update" method="post"><div><strong class="font-mono text-xs text-cyan-400">{{ "%02d:%02d"|format((scene.start_ms // 60000), (scene.start_ms // 1000) % 60) }} - {{ "%02d:%02d"|format((scene.end_ms // 60000), (scene.end_ms // 1000) % 60) }}</strong><span class="mt-1 block font-mono text-[10px] text-slate-600">SCENE {{ scene.id }}</span><p class="mt-3 text-sm leading-6 text-slate-300">{{ scene.original_text }}</p></div><label class="text-xs text-slate-500">IMAGE PROMPT<textarea name="generated_prompt" rows="5" class="mt-2 min-h-28 w-full rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs leading-5 text-slate-200">{{ scene.generated_prompt or "" }}</textarea></label><label class="text-xs text-slate-500">VIDEO PROMPT<textarea name="video_prompt" rows="5" class="mt-2 min-h-28 w-full rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs leading-5 text-slate-200">{{ scene.video_prompt or "" }}</textarea></label><div class="flex flex-col gap-3"><label class="flex items-start gap-2 text-xs leading-5 text-slate-300"><input type="checkbox" name="use_cref" value="true"{% if scene.use_cref %} checked{% endif %} class="mt-1 accent-cyan-400"> Dùng ảnh tham chiếu (--cref)</label><input name="reference_url" type="url" value="{{ scene.reference_url or '' }}" placeholder="URL ảnh riêng" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200"><button type="submit" class="mt-auto rounded-lg bg-slate-700 px-4 py-3 text-xs font-semibold text-white hover:bg-cyan-500 hover:text-slate-950">Save changes</button><span class="save-status text-center font-mono text-[10px] text-slate-500"></span></div></form>
+    {% else %}<p class="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-sm text-slate-500">Chưa có cảnh. Hãy nạp SRT hoặc tạo mốc trước.</p>{% endfor %}</div>
       </article>
-      {% else %}
-      <div class="empty">Chưa có dự án. Tạo workspace đầu tiên ở trên.</div>
-      {% endfor %}
-    </section>
-  </main>
-</body>
-</html>
+  {% else %}<div class="rounded-2xl border border-dashed border-slate-800 px-6 py-16 text-center text-slate-500">Chưa có dự án. Tạo workspace đầu tiên ở trên.</div>{% endfor %}
+  </section>
+      </section>
+    </main>
+    <script>
+      document.querySelectorAll('.scene-form').forEach((form) => form.addEventListener('submit', async (event) => { event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const status = form.querySelector('.save-status'); button.disabled = true; status.textContent = 'SAVING...'; try { const response = await fetch(form.action, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({image_prompt: form.elements.generated_prompt.value, video_prompt: form.elements.video_prompt.value, use_cref: form.elements.use_cref.checked, reference_url: form.elements.reference_url.value})}); if (!response.ok) throw new Error('Save failed'); status.textContent = 'SAVED'; status.className = 'save-status text-center font-mono text-[10px] text-emerald-400'; } catch (error) { status.textContent = error.message; status.className = 'save-status text-center font-mono text-[10px] text-rose-400'; } finally { button.disabled = false; } }));
+    </script>
+    <body>
+    </html>

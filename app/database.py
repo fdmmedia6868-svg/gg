@@ -30,6 +30,15 @@ def ensure_schema():
         for name, definition in additions.items():
             if name not in existing_columns:
                 connection.execute(text(f"ALTER TABLE projects ADD COLUMN {name} {definition}"))
+        scene_columns = {column["name"] for column in inspect(engine).get_columns("script_scenes")}
+        scene_additions = {
+            "video_prompt": "TEXT",
+            "use_cref": "BOOLEAN NOT NULL DEFAULT 1",
+            "reference_url": "VARCHAR(1000)",
+        }
+        for name, definition in scene_additions.items():
+            if name not in scene_columns:
+                connection.execute(text(f"ALTER TABLE script_scenes ADD COLUMN {name} {definition}"))
 
 
 def get_db():

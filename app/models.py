@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -54,9 +54,20 @@ class ScriptScene(Base):
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     generated_prompt: Mapped[str | None] = mapped_column(Text)
+    video_prompt: Mapped[str | None] = mapped_column(Text)
+    use_cref: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    reference_url: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(30), default=SceneStatus.PENDING.value)
     project: Mapped[Project] = relationship(back_populates="scenes")
     renders: Mapped[list["RenderResult"]] = relationship(back_populates="scene", cascade="all, delete-orphan")
+
+    @property
+    def use_reference(self) -> bool:
+        return self.use_cref
+
+    @use_reference.setter
+    def use_reference(self, value: bool):
+        self.use_cref = value
 
 
 class RenderResult(Base):
